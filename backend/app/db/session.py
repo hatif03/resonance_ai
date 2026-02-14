@@ -1,16 +1,20 @@
-"""Database session and connection."""
+"""Database session and connection – supports PostgreSQL (Supabase) and SQLite."""
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 from app.db.models import Base
 
+_is_sqlite = settings.database_url.startswith("sqlite")
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-)
+# Build engine kwargs depending on the backend
+_engine_kwargs: dict = {"echo": settings.debug}
+if _is_sqlite:
+    # SQLite needs check_same_thread=False for async usage
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 
 async_session = async_sessionmaker(
     engine,
@@ -21,8 +25,17 @@ async_session = async_sessionmaker(
 )
 
 
+# Enable foreign keys for SQLite (off by default)
+if _is_sqlite:
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 async def get_db():
-    """Dependency for FastAPI - yields async session."""
+    """Dependency for FastAPI – yields async session."""
     async with async_session() as session:
         try:
             yield session

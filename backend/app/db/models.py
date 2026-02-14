@@ -1,9 +1,12 @@
-"""SQLAlchemy models."""
+"""SQLAlchemy models – works with both PostgreSQL and SQLite."""
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from sqlalchemy import (
+    Column, String, Text, Integer, DateTime, ForeignKey, Index, JSON,
+    TypeDecorator, CHAR,
+)
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -12,8 +15,29 @@ class Base(DeclarativeBase):
     pass
 
 
-def generate_uuid():
-    return str(uuid.uuid4())
+# ---------------------------------------------------------------------------
+# Portable UUID type – uses native PG UUID when available, CHAR(36) on SQLite
+# ---------------------------------------------------------------------------
+class PortableUUID(TypeDecorator):
+    """Platform-agnostic UUID column."""
+    impl = CHAR(36)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return str(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
+        return value
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
 
 
 class Call(Base):
@@ -21,12 +45,12 @@ class Call(Base):
 
     __tablename__ = "calls"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid.uuid4)
     source = Column(String(20), nullable=False)  # google_meet | twilio | upload
     external_id = Column(String(255), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     ended_at = Column(DateTime(timezone=True), nullable=True)
-    metadata_ = Column("metadata", JSONB, nullable=True, default=dict)
+    metadata_ = Column("metadata", JSON, nullable=True, default=dict)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     segments = relationship("TranscriptSegment", back_populates="call", cascade="all, delete-orphan")
@@ -38,8 +62,8 @@ class TranscriptSegment(Base):
 
     __tablename__ = "transcript_segments"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    call_id = Column(UUID(as_uuid=True), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False)
+    id = Column(PortableUUID(), primary_key=True, default=uuid.uuid4)
+    call_id = Column(PortableUUID(), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False)
     speaker = Column(String(20), nullable=False)  # agent | customer
     text = Column(Text, nullable=False)
     start_time_ms = Column(Integer, nullable=True)
@@ -54,10 +78,10 @@ class CallAnalysis(Base):
 
     __tablename__ = "call_analyses"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    call_id = Column(UUID(as_uuid=True), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False)
+    id = Column(PortableUUID(), primary_key=True, default=uuid.uuid4)
+    call_id = Column(PortableUUID(), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False)
     analysis_type = Column(String(20), nullable=False)  # realtime | post_call
-    payload = Column(JSONB, nullable=False, default=dict)
+    payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     call = relationship("Call", back_populates="analyses")

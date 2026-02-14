@@ -3,18 +3,12 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.db.repository import list_calls as repo_list_calls, get_call as repo_get_call
 from app.api.schemas import CallListResponse, CallDetailResponse, CallResponse, TranscriptSegmentResponse, CallAnalysisResponse
-from app.analysis.realtime import run_realtime_analysis
 
 router = APIRouter()
-
-
-class RealtimeAnalysisRequest(BaseModel):
-    segment_text: str
 
 
 @router.get("", response_model=CallListResponse)
@@ -67,18 +61,3 @@ async def get_call(
     )
 
 
-@router.post("/{call_id}/analyze-realtime")
-async def analyze_realtime(
-    call_id: UUID,
-    body: RealtimeAnalysisRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Run real-time analysis on a transcript segment.
-    Use when integrating with streaming transcript sources (Meet Media API, Recall.ai).
-    """
-    call = await repo_get_call(db, call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    payload = await run_realtime_analysis(db, call_id, body.segment_text)
-    return {"call_id": str(call_id), "analysis": payload}

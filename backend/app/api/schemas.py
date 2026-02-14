@@ -79,22 +79,3 @@ class CallAnalysisListResponse(BaseModel):
 class CallDetailResponse(CallResponse):
     segments: list[TranscriptSegmentResponse] = []
     analyses: list[CallAnalysisResponse] = []
-
-
-# --- Webhook payloads ---
-class MeetWebhookSegment(BaseModel):
-    speaker: str = "unknown"
-    text: str
-    start_time_ms: int | None = None
-    end_time_ms: int | None = None
-
-
-class MeetWebhookPayload(BaseModel):
-    """Payload for Google Meet transcript webhook."""
-
-    source: str = "google_meet"
-    external_id: str | None = None
-    conference_id: str | None = None
-    started_at: datetime | None = None
-    ended_at: datetime | None = None
-    segments: list[MeetWebhookSegment]
